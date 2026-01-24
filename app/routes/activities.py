@@ -26,25 +26,7 @@ def create_activity(user_id: str, polyline: str, db: Session = Depends(get_db)):
     )
     db.add(activity)
 
-    hexes = polyline_to_h3(polyline)
-
-for hex_id in hexes:
-    influence = (
-        db.query(TerritoryInfluence)
-        .filter_by(territory_id=hex_id, user_id=user_id)
-        .first()
-    )
-
-    if influence:
-        influence.influence += 1
-    else:
-        influence = TerritoryInfluence(
-            territory_id=hex_id,
-            user_id=user_id,
-            influence=1,
-        )
-        db.add(influence)
-
+    territory_id = fake_polyline_to_territory(polyline)
 
     influence = (
         db.query(TerritoryInfluence)
