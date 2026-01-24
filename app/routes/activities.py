@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.models import Activity, TerritoryInfluence
+from app.models import Activity, TerritoryInfluence, User
 from app.utils.geo import polyline_to_h3
-import uuid
 
-router = APIRouter(prefix="/activities")
+router = APIRouter(prefix="/activities", tags=["activities"])
 
+
+# --- DB dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -14,39 +15,60 @@ def get_db():
     finally:
         db.close()
 
-def fake_polyline_to_territory(polyline: str) -> str:
-    # MVP: hash simple → luego H3
-    return str(abs(hash(polyline)) % 1000)
 
+# --- Create activity and update territory influence ---
 @router.post("/")
-def create_activity(user_id: str, polyline: str, db: Session = Depends(get_db)):
+def create_activity(
+    user_id: str,
+    polyline: str,
+    db: Session = Depends(get_db),
+):
+    # 1️⃣ Check user exists
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2️⃣ Create activity
     activity = Activity(
         user_id=user_id,
         polyline=polyline,
     )
     db.add(activity)
 
-    territory_id = fake_polyline_to_territory(polyline)
+    # 3️⃣ Convert polyline → H3 hexes
+    try:
+        hexes = polyline_to_h3(polyline)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid polyline")
 
-    influence = (
-        db.query(TerritoryInfluence)
-        .filter_by(territory_id=territory_id, user_id=user_id)
-        .first()
-    )
+    if not hexes:
+        raise HTTPException(status_code=400, detail="No territories generated")
 
-    if influence:
-        influence.influence += 1
-    else:
-        influence = TerritoryInfluence(
-            territory_id=territory_id,
-            user_id=user_id,
-            influence=1,
+    # 4️⃣ Update influence per hex
+    for hex_id in hexes:
+        influence = (
+            db.query(TerritoryInfluence)
+            .filter(
+                TerritoryInfluence.territory_id == hex_id,
+                TerritoryInfluence.user_id == user_id,
+            )
+            .first()
         )
-        db.add(influence)
 
+        if influence:
+            influence.influence += 1
+        else:
+            influence = TerritoryInfluence(
+                territory_id=hex_id,
+                user_id=user_id,
+                influence=1,
+            )
+            db.add(influence)
+
+    # 5️⃣ Commit once
     db.commit()
+
     return {
         "activity_id": activity.id,
-        "territory_id": territory_id,
-        "influence": influence.influence,
+        "hexes_affected": len(hexes),
     }
