@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.database import SessionLocal
 from app.models import Activity, TerritoryInfluence, User
 from app.utils.geo import polyline_to_h3
@@ -16,41 +17,45 @@ def get_db():
         db.close()
 
 
-# --- Create activity and update territory influence ---
+# --- Request schema ---
+class ActivityCreate(BaseModel):
+    user_id: str
+    polyline: str
+
+
 @router.post("/")
 def create_activity(
-    user_id: str,
-    polyline: str,
+    data: ActivityCreate,
     db: Session = Depends(get_db),
 ):
     # 1️⃣ Check user exists
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # 2️⃣ Create activity
     activity = Activity(
-        user_id=user_id,
-        polyline=polyline,
+        user_id=data.user_id,
+        polyline=data.polyline,
     )
     db.add(activity)
 
-    # 3️⃣ Convert polyline → H3 hexes
+    # 3️⃣ Convert polyline → H3
     try:
-        hexes = polyline_to_h3(polyline)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid polyline")
+        hexes = polyline_to_h3(data.polyline)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid polyline: {e}")
 
     if not hexes:
         raise HTTPException(status_code=400, detail="No territories generated")
 
-    # 4️⃣ Update influence per hex
+    # 4️⃣ Update influence
     for hex_id in hexes:
         influence = (
             db.query(TerritoryInfluence)
-            .filter(
-                TerritoryInfluence.territory_id == hex_id,
-                TerritoryInfluence.user_id == user_id,
+            .filter_by(
+                territory_id=hex_id,
+                user_id=data.user_id,
             )
             .first()
         )
@@ -60,12 +65,11 @@ def create_activity(
         else:
             influence = TerritoryInfluence(
                 territory_id=hex_id,
-                user_id=user_id,
+                user_id=data.user_id,
                 influence=1,
             )
             db.add(influence)
 
-    # 5️⃣ Commit once
     db.commit()
 
     return {
