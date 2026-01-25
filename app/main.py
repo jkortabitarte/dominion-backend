@@ -1,6 +1,19 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# 🌍 CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://jkortabitarte.github.io",
+        "http://localhost:8000",  # por si pruebas en local
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 from app.routes import activities, users, territories
 app.include_router(territories.router)
