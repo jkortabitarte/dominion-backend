@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.database import SessionLocal
 from app.models import TerritoryInfluence
 
@@ -16,16 +17,26 @@ def get_db():
 
 @router.get("/")
 def get_territories(db: Session = Depends(get_db)):
-    territories = (
-        db.query(TerritoryInfluence)
+    rows = (
+        db.query(
+            TerritoryInfluence.territory_id,
+            TerritoryInfluence.user_id,
+            TerritoryInfluence.influence,
+        )
+        .order_by(
+            TerritoryInfluence.territory_id,
+            TerritoryInfluence.influence.desc(),
+        )
         .all()
     )
 
-    return [
-        {
-            "territory_id": t.territory_id,
-            "user_id": t.user_id,
-            "influence": t.influence,
-        }
-        for t in territories
-    ]
+    territories = {}
+    for r in rows:
+        if r.territory_id not in territories:
+            territories[r.territory_id] = {
+                "territory_id": r.territory_id,
+                "owner": r.user_id,
+                "influence": r.influence,
+            }
+
+    return list(territories.values())
