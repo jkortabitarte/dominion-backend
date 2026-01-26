@@ -15,7 +15,7 @@ def get_db():
         db.close()
 
 
-@router.get("/")
+@router.get("")
 def get_territories(db: Session = Depends(get_db)):
     rows = (
         db.query(
