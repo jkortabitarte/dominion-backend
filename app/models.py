@@ -13,7 +13,13 @@ class User(Base):
     password_hash = Column(String, nullable=False)
 
     # conexiones externas
-    strava_id = Column(Integer, nullable=True)
+    # 🔴 STRAVA
+    strava_athlete_id = Column(Integer, unique=True, nullable=True)
+    strava_access_token = Column(String, nullable=True)
+    strava_refresh_token = Column(String, nullable=True)
+    strava_expires_at = Column(Integer, nullable=True)
+
+    # strava_id = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
