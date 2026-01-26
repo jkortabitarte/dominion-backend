@@ -8,6 +8,9 @@ from app.dependencies.auth import get_current_user
 from app.database import SessionLocal
 from app.models import User
 
+from app.utils.strava_import import process_strava_activity
+from datetime import datetime
+
 router = APIRouter(prefix="/strava", tags=["strava"])
 
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
@@ -75,10 +78,11 @@ def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
     }
 
 
-# --- Step 3: Import activities (preview for now) ---
+# --- Step 3: Import activities ---
 @router.post("/import")
 def import_activities(
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     if not current_user.strava_access_token:
         raise HTTPException(
@@ -93,18 +97,31 @@ def import_activities(
     res = requests.get(
         "https://www.strava.com/api/v3/athlete/activities",
         headers=headers,
-        params={"per_page": 50},
+        params={
+            "per_page": 50,
+            "page": 1,
+        },
     )
 
     if res.status_code != 200:
-        raise HTTPException(
-            status_code=400,
-            detail="Failed to fetch activities from Strava",
-        )
+        raise HTTPException(status_code=400, detail="Strava API error")
 
     activities = res.json()
 
+    imported = 0
+    skipped = 0
+
+    for act in activities:
+        ok = process_strava_activity(db, current_user, act)
+        if ok:
+            imported += 1
+        else:
+            skipped += 1
+
+    db.commit()
+
     return {
-        "imported": len(activities),
-        "preview": activities[:2],
+        "imported": imported,
+        "skipped": skipped,
+        "total_seen": len(activities),
     }

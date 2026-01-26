@@ -25,9 +25,13 @@ class User(Base):
 
 class Activity(Base):
     __tablename__ = "activities"
-#    id = Column(String, primary_key=True)
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"))
+
+    # 🔴 STRAVA
+    strava_activity_id = Column(Integer, unique=True, index=True)
+
     polyline = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
