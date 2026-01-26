@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine
 from app.models import Base
-from app.routes import activities, users, territories, auth, strava
+from app.routes import activities, users, territories, auth, strava, strava_webhook
 
 app = FastAPI()
 
@@ -28,6 +28,7 @@ app.include_router(users.router)
 app.include_router(activities.router)
 app.include_router(territories.router)
 app.include_router(strava.router)
+app.include_router(strava_webhook.router)
 
 
 @app.get("/")
