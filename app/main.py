@@ -16,7 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routes import activities, users, territories
+from app.routes import activities, users, territories, auth
+app.include_router(auth.router)
 app.include_router(territories.router)
 app.include_router(users.router)
 app.include_router(activities.router)
