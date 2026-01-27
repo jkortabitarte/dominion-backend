@@ -13,7 +13,8 @@ STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 
 
 # 🔐 1) Webhook verification
-@router.get("/")
+@router.get("/webhook")
+@router.get("/webhook/")
 def verify_webhook(
     hub_mode: str = Query(..., alias="hub.mode"),
     hub_challenge: str = Query(..., alias="hub.challenge"),
