@@ -39,7 +39,7 @@ def connect_strava(current_user: User = Depends(get_current_user)):
         "&scope=activity:read_all"
         f"&state={current_user.id}"
     )
-    return RedirectResponse(url)
+    return {"auth_url": url}
 
 
 # --- Step 2: Strava callback ---
