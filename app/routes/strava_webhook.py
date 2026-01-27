@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from app.database import SessionLocal
 from app.models import User, Activity, TerritoryInfluence
 from app.utils.geo import polyline_to_h3
 import os
 import requests
+import time
 
-router = APIRouter(prefix="/strava/webhook", tags=["strava-webhook"])
+router = APIRouter(prefix="/strava", tags=["strava-webhook"])
 
 STRAVA_VERIFY_TOKEN = os.getenv("STRAVA_VERIFY_TOKEN")
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 
 
-# 🔐 1) Webhook verification
+# 🔐 1) Webhook verification (GET)
 @router.get("/webhook")
 @router.get("/webhook/")
 def verify_webhook(
@@ -25,20 +26,11 @@ def verify_webhook(
 
     return {"hub.challenge": hub_challenge}
 
-# 📩 2) Receive events
-@router.post("/")
-async def receive_event(payload: dict):
-    """
-    Example payload:
-    {
-      "object_type": "activity",
-      "object_id": 123456789,
-      "aspect_type": "create",
-      "owner_id": 987654,
-      ...
-    }
-    """
 
+# 📩 2) Receive events (POST)
+@router.post("/webhook")
+@router.post("/webhook/")
+async def receive_event(payload: dict):
     if payload.get("object_type") != "activity":
         return {"status": "ignored"}
 
@@ -58,7 +50,7 @@ async def receive_event(payload: dict):
         return {"status": "user not found"}
 
     # 🔄 Refresh token if needed
-    if user.strava_expires_at < int(__import__("time").time()):
+    if user.strava_expires_at < int(time.time()):
         refresh = requests.post(
             "https://www.strava.com/oauth/token",
             data={
