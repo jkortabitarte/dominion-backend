@@ -16,6 +16,10 @@ router = APIRouter(prefix="/strava", tags=["strava"])
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 STRAVA_REDIRECT_URI = os.getenv("STRAVA_REDIRECT_URI")
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://jkortabitarte.github.io/dominion-map"
+)
 
 
 # --- DB dependency ---
@@ -72,11 +76,10 @@ def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
 
     db.commit()
 
-    return {
-        "status": "Strava connected",
-        "athlete_id": user.strava_athlete_id,
-    }
-
+    # ✅ REDIRECT AL PERFIL
+    return RedirectResponse(
+        url=f"{FRONTEND_URL}/profile.html?strava=connected"
+    )
 
 # --- Step 3: Import activities ---
 @router.post("/import")
