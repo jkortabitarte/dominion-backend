@@ -39,6 +39,13 @@ async def receive_event(payload: dict):
 
     athlete_id = payload["owner_id"]
     activity_id = payload["object_id"]
+    # ❌ Avoid duplicate imports
+    existing = db.query(Activity).filter(
+       Activity.strava_activity_id == activity_id
+    ).first()
+
+    if existing:
+       return {"status": "already imported"}
 
     db = SessionLocal()
 
@@ -83,6 +90,7 @@ async def receive_event(payload: dict):
     # 💾 Save activity
     activity = Activity(
         user_id=user.id,
+        strava_activity_id=activity_id,
         polyline=polyline,
     )
     db.add(activity)

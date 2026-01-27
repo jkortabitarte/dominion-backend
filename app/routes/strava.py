@@ -125,3 +125,72 @@ def import_activities(
         "skipped": skipped,
         "total_seen": len(activities),
     }
+
+@router.post("/import/all")
+def import_all_activities(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    page = 1
+    imported = 0
+
+    while True:
+        res = requests.get(
+            "https://www.strava.com/api/v3/athlete/activities",
+            headers={
+                "Authorization": f"Bearer {current_user.strava_access_token}"
+            },
+            params={
+                "per_page": 50,
+                "page": page,
+            },
+        )
+
+        activities = res.json()
+        if not activities:
+            break
+
+        for a in activities:
+            polyline = a.get("map", {}).get("summary_polyline")
+            if not polyline:
+                continue
+
+            exists = db.query(Activity).filter(
+                Activity.strava_activity_id == a["id"]
+            ).first()
+
+            if exists:
+                continue
+
+            activity = Activity(
+                user_id=current_user.id,
+                strava_activity_id=a["id"],
+                polyline=polyline,
+            )
+            db.add(activity)
+
+            hexes = polyline_to_h3(polyline)
+            for hex_id in hexes:
+                influence = db.query(TerritoryInfluence).filter_by(
+                    territory_id=hex_id,
+                    user_id=current_user.id,
+                ).first()
+
+                if influence:
+                    influence.influence += 1
+                else:
+                    db.add(TerritoryInfluence(
+                        territory_id=hex_id,
+                        user_id=current_user.id,
+                        influence=1,
+                    ))
+
+            imported += 1
+
+        db.commit()
+        page += 1
+
+    return {
+        "status": "ok",
+        "imported": imported,
+    }
