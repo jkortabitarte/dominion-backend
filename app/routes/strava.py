@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from collections import Counter
 import os
 import requests
 
@@ -10,13 +9,13 @@ from app.database import SessionLocal
 from app.models import User
 
 from app.utils.strava_import import process_strava_activity
-from datetime import datetime
 
 router = APIRouter(prefix="/strava", tags=["strava"])
 
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 STRAVA_REDIRECT_URI = os.getenv("STRAVA_REDIRECT_URI")
+
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "https://jkortabitarte.github.io/dominion-map"
@@ -32,7 +31,9 @@ def get_db():
         db.close()
 
 
-# --- Step 1: Redirect user to Strava ---
+# =========================================================
+# 1️⃣ CONNECT STRAVA (OAuth redirect)
+# =========================================================
 @router.get("/connect")
 def connect_strava(current_user: User = Depends(get_current_user)):
     url = (
@@ -47,7 +48,9 @@ def connect_strava(current_user: User = Depends(get_current_user)):
     return {"auth_url": url}
 
 
-# --- Step 2: Strava callback ---
+# =========================================================
+# 2️⃣ STRAVA CALLBACK
+# =========================================================
 @router.get("/callback")
 def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == state).first()
@@ -77,12 +80,15 @@ def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
 
     db.commit()
 
-    # ✅ REDIRECT AL PERFIL
+    # 🔁 Redirect back to profile
     return RedirectResponse(
         url=f"{FRONTEND_URL}/profile.html?strava=connected"
     )
 
-# --- Step 3: Import activities ---
+
+# =========================================================
+# 3️⃣ IMPORT LAST ACTIVITIES (SAFE)
+# =========================================================
 @router.post("/import")
 def import_activities(
     current_user: User = Depends(get_current_user),
@@ -93,43 +99,44 @@ def import_activities(
             status_code=400,
             detail="Strava not connected",
         )
+
     try:
+        headers = {
+            "Authorization": f"Bearer {current_user.strava_access_token}"
+        }
 
-      headers = {
-          "Authorization": f"Bearer {current_user.strava_access_token}"
-      }
+        res = requests.get(
+            "https://www.strava.com/api/v3/athlete/activities",
+            headers=headers,
+            params={
+                "per_page": 50,
+                "page": 1,
+            },
+        )
 
-      res = requests.get(
-        "https://www.strava.com/api/v3/athlete/activities",
-        headers=headers,
-        params={
-            "per_page": 50,
-            "page": 1,
-        },
-      )
+        if res.status_code != 200:
+            raise HTTPException(status_code=400, detail="Strava API error")
 
-      if res.status_code != 200:
-        raise HTTPException(status_code=400, detail="Strava API error")
+        activities = res.json()
 
-      activities = res.json()
+        imported = 0
+        skipped = 0
 
-      imported = 0
-      skipped = 0
+        for act in activities:
+            ok = process_strava_activity(db, current_user, act)
+            if ok:
+                imported += 1
+            else:
+                skipped += 1
 
-      for act in activities:
-        ok = process_strava_activity(db, current_user, act)
-        if ok:
-            imported += 1
-        else:
-            skipped += 1
+        db.commit()
 
-      db.commit()
+        return {
+            "imported": imported,
+            "skipped": skipped,
+            "total_seen": len(activities),
+        }
 
-      return {
-        "imported": imported,
-        "skipped": skipped,
-        "total_seen": len(activities),
-      }
     except Exception as e:
         print("❌ Strava import error:", e)
         raise HTTPException(
@@ -137,73 +144,64 @@ def import_activities(
             detail="Internal Strava import error",
         )
 
+
+# =========================================================
+# 4️⃣ IMPORT ALL ACTIVITIES (PAGINATED, SAFE)
+# =========================================================
 @router.post("/import/all")
 def import_all_activities(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    page = 1
-    imported = 0
-
-    while True:
-        res = requests.get(
-            "https://www.strava.com/api/v3/athlete/activities",
-            headers={
-                "Authorization": f"Bearer {current_user.strava_access_token}"
-            },
-            params={
-                "per_page": 50,
-                "page": page,
-            },
+    if not current_user.strava_access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Strava not connected",
         )
 
-        activities = res.json()
-        if not activities:
-            break
+    page = 1
+    imported = 0
+    skipped = 0
 
-        for a in activities:
-            polyline = a.get("map", {}).get("summary_polyline")
-            if not polyline:
-                continue
-
-            exists = db.query(Activity).filter(
-                Activity.strava_activity_id == a["id"]
-            ).first()
-
-            if exists:
-                continue
-
-            activity = Activity(
-                user_id=current_user.id,
-                strava_activity_id=a["id"],
-                polyline=polyline,
+    try:
+        while True:
+            res = requests.get(
+                "https://www.strava.com/api/v3/athlete/activities",
+                headers={
+                    "Authorization": f"Bearer {current_user.strava_access_token}"
+                },
+                params={
+                    "per_page": 50,
+                    "page": page,
+                },
             )
-            db.add(activity)
 
-            hexes = polyline_to_h3(polyline)
-            hex_counter = Counter(hexes)
+            if res.status_code != 200:
+                break
 
-            for hex_id, count in hex_counter.items():
-                influence = db.query(TerritoryInfluence).filter_by(
-                  territory_id=hex_id,
-                  user_id=current_user.id,
-                ).first()
+            activities = res.json()
+            if not activities:
+                break
 
-               if influence:
-                 influence.influence += count
-               else:
-                 db.add(TerritoryInfluence(
-                   territory_id=hex_id,
-                   user_id=current_user.id,
-                   influence=count,
-                 ))
+            for act in activities:
+                ok = process_strava_activity(db, current_user, act)
+                if ok:
+                    imported += 1
+                else:
+                    skipped += 1
 
-            imported += 1
+            db.commit()
+            page += 1
 
-        db.commit()
-        page += 1
+        return {
+            "status": "ok",
+            "imported": imported,
+            "skipped": skipped,
+        }
 
-    return {
-        "status": "ok",
-        "imported": imported,
-    }
+    except Exception as e:
+        print("❌ Strava import all error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal Strava import error",
+        )
