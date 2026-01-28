@@ -7,7 +7,6 @@ import requests
 from app.dependencies.auth import get_current_user
 from app.database import SessionLocal
 from app.models import User
-
 from app.utils.strava_import import process_strava_activity
 
 router = APIRouter(prefix="/strava", tags=["strava"])
@@ -15,7 +14,6 @@ router = APIRouter(prefix="/strava", tags=["strava"])
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 STRAVA_REDIRECT_URI = os.getenv("STRAVA_REDIRECT_URI")
-
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "https://jkortabitarte.github.io/dominion-map"
@@ -31,9 +29,7 @@ def get_db():
         db.close()
 
 
-# =========================================================
-# 1️⃣ CONNECT STRAVA (OAuth redirect)
-# =========================================================
+# --- Step 1: Redirect user to Strava ---
 @router.get("/connect")
 def connect_strava(current_user: User = Depends(get_current_user)):
     url = (
@@ -48,9 +44,7 @@ def connect_strava(current_user: User = Depends(get_current_user)):
     return {"auth_url": url}
 
 
-# =========================================================
-# 2️⃣ STRAVA CALLBACK
-# =========================================================
+# --- Step 2: Strava callback ---
 @router.get("/callback")
 def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == state).first()
@@ -80,15 +74,13 @@ def strava_callback(code: str, state: str, db: Session = Depends(get_db)):
 
     db.commit()
 
-    # 🔁 Redirect back to profile
+    # ✅ volver al perfil
     return RedirectResponse(
         url=f"{FRONTEND_URL}/profile.html?strava=connected"
     )
 
 
-# =========================================================
-# 3️⃣ IMPORT LAST ACTIVITIES (SAFE)
-# =========================================================
+# --- Step 3: Import activities ---
 @router.post("/import")
 def import_activities(
     current_user: User = Depends(get_current_user),
@@ -115,6 +107,7 @@ def import_activities(
         )
 
         if res.status_code != 200:
+            print("❌ Strava API response:", res.text)
             raise HTTPException(status_code=400, detail="Strava API error")
 
         activities = res.json()
@@ -139,68 +132,6 @@ def import_activities(
 
     except Exception as e:
         print("❌ Strava import error:", e)
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Strava import error",
-        )
-
-
-# =========================================================
-# 4️⃣ IMPORT ALL ACTIVITIES (PAGINATED, SAFE)
-# =========================================================
-@router.post("/import/all")
-def import_all_activities(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if not current_user.strava_access_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Strava not connected",
-        )
-
-    page = 1
-    imported = 0
-    skipped = 0
-
-    try:
-        while True:
-            res = requests.get(
-                "https://www.strava.com/api/v3/athlete/activities",
-                headers={
-                    "Authorization": f"Bearer {current_user.strava_access_token}"
-                },
-                params={
-                    "per_page": 50,
-                    "page": page,
-                },
-            )
-
-            if res.status_code != 200:
-                break
-
-            activities = res.json()
-            if not activities:
-                break
-
-            for act in activities:
-                ok = process_strava_activity(db, current_user, act)
-                if ok:
-                    imported += 1
-                else:
-                    skipped += 1
-
-            db.commit()
-            page += 1
-
-        return {
-            "status": "ok",
-            "imported": imported,
-            "skipped": skipped,
-        }
-
-    except Exception as e:
-        print("❌ Strava import all error:", e)
         raise HTTPException(
             status_code=500,
             detail="Internal Strava import error",
