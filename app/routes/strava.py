@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from collections import Counter
 import os
 import requests
 
@@ -180,20 +181,22 @@ def import_all_activities(
             db.add(activity)
 
             hexes = polyline_to_h3(polyline)
-            for hex_id in hexes:
+            hex_counter = Counter(hexes)
+
+            for hex_id, count in hex_counter.items():
                 influence = db.query(TerritoryInfluence).filter_by(
-                    territory_id=hex_id,
-                    user_id=current_user.id,
+                  territory_id=hex_id,
+                  user_id=current_user.id,
                 ).first()
 
-                if influence:
-                    influence.influence += 1
-                else:
-                    db.add(TerritoryInfluence(
-                        territory_id=hex_id,
-                        user_id=current_user.id,
-                        influence=1,
-                    ))
+               if influence:
+                 influence.influence += count
+               else:
+                 db.add(TerritoryInfluence(
+                   territory_id=hex_id,
+                   user_id=current_user.id,
+                   influence=count,
+                 ))
 
             imported += 1
 
