@@ -13,6 +13,7 @@ app.add_middleware(
     allow_origins=[
         "https://jkortabitarte.github.io",
         "http://localhost:8000",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
