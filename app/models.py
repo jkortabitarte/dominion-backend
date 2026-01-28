@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, DateTime
+from sqlalchemy import Column, String, Integer, Float, DateTime, BigInteger
 from sqlalchemy.sql import func
 from app.database import Base
 from sqlalchemy import ForeignKey
@@ -27,12 +27,12 @@ class Activity(Base):
     __tablename__ = "activities"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
 
     # 🔴 STRAVA
-    strava_activity_id = Column(Integer, unique=True, index=True)
+    strava_activity_id = Column(BigInteger, unique=True, index=True, nullable=False)
 
-    polyline = Column(String)
+    polyline = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class TerritoryInfluence(Base):
