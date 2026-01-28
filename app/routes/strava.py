@@ -92,42 +92,49 @@ def import_activities(
             status_code=400,
             detail="Strava not connected",
         )
+    try:
 
-    headers = {
-        "Authorization": f"Bearer {current_user.strava_access_token}"
-    }
+      headers = {
+          "Authorization": f"Bearer {current_user.strava_access_token}"
+      }
 
-    res = requests.get(
+      res = requests.get(
         "https://www.strava.com/api/v3/athlete/activities",
         headers=headers,
         params={
             "per_page": 50,
             "page": 1,
         },
-    )
+      )
 
-    if res.status_code != 200:
+      if res.status_code != 200:
         raise HTTPException(status_code=400, detail="Strava API error")
 
-    activities = res.json()
+      activities = res.json()
 
-    imported = 0
-    skipped = 0
+      imported = 0
+      skipped = 0
 
-    for act in activities:
+      for act in activities:
         ok = process_strava_activity(db, current_user, act)
         if ok:
             imported += 1
         else:
             skipped += 1
 
-    db.commit()
+      db.commit()
 
-    return {
+      return {
         "imported": imported,
         "skipped": skipped,
         "total_seen": len(activities),
-    }
+      }
+    except Exception as e:
+        print("❌ Strava import error:", e)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal Strava import error",
+        )
 
 @router.post("/import/all")
 def import_all_activities(
