@@ -8,6 +8,7 @@ from app.dependencies.auth import get_current_user
 from app.database import SessionLocal
 from app.models import User
 from app.utils.strava_import import process_strava_activity
+from app.utils.strava_auth import ensure_valid_strava_token
 
 router = APIRouter(prefix="/strava", tags=["strava"])
 
@@ -93,6 +94,7 @@ def import_activities(
         )
 
     try:
+        ensure_valid_strava_token(current_user, db)
         headers = {
             "Authorization": f"Bearer {current_user.strava_access_token}"
         }
