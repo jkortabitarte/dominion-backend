@@ -87,6 +87,7 @@ def import_activities(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    influence_cache = {}
     if not current_user.strava_access_token:
         raise HTTPException(
             status_code=400,
@@ -118,7 +119,7 @@ def import_activities(
         skipped = 0
 
         for act in activities:
-            ok = process_strava_activity(db, current_user, act)
+            ok = process_strava_activity(db, current_user, act, influence_cache)
             if ok:
                 imported += 1
             else:
