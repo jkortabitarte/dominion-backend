@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, func
 
 from app.database import SessionLocal
-from app.models import User
+from app.models import User, Activity, TerritoryInfluence
 from app.dependencies.auth import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -41,4 +41,42 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
         "id": user.id,
         "username": user.username,
         # ❗ Nada sensible aquí
+    }
+
+# 🔐 PRIVATE: current user statistics
+@router.get("/me/stats")
+def get_my_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    activities_count = (
+        db.query(func.count(Activity.id))
+        .filter(Activity.user_id == current_user.id)
+        .scalar()
+    )
+
+    hexes_count = (
+        db.query(func.count(TerritoryInfluence.territory_id))
+        .filter(TerritoryInfluence.user_id == current_user.id)
+        .scalar()
+    )
+
+    total_influence = (
+        db.query(func.coalesce(func.sum(TerritoryInfluence.influence), 0))
+        .filter(TerritoryInfluence.user_id == current_user.id)
+        .scalar()
+    )
+
+    last_activity = (
+        db.query(Activity.created_at)
+        .filter(Activity.user_id == current_user.id)
+        .order_by(Activity.created_at.desc())
+        .first()
+    )
+
+    return {
+        "activities": activities_count,
+        "hexes": hexes_count,
+        "influence": total_influence,
+        "last_activity": last_activity[0] if last_activity else None,
     }
